@@ -26,3 +26,15 @@ export class InvalidLedgerEntryError extends DomainError { }
 export class InvalidInboxMessageError extends DomainError { }
 
 export class InvalidOutboxMessageError extends DomainError { }
+
+export class WalletNotFoundError extends DomainError {
+    constructor(walletId: string) {
+        super(`Wallet not found: ${walletId}`);
+    }
+}
+
+export class IdempotencyConflictError extends DomainError {
+    constructor(idempotencyKey: string) {
+        super(`Idempotency key "${idempotencyKey}" was already used with a different payload`);
+    }
+}

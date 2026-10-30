@@ -3,4 +3,5 @@ dist
 .env
 coverage
 *.log
-.DS_Store
+.DS_Storetsconfig.build.tsbuildinfo
+tsconfig.build.tsbuildinfo

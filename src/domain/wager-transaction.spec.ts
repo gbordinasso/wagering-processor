@@ -4,6 +4,7 @@ import { FailureCode } from './failure-code.js';
 import { Money } from './money.js';
 import { WagerTransaction, type CreateWagerTransactionProps } from './wager-transaction.js';
 import { WagerTransactionKind, WagerTransactionStatus } from './wager-transaction-enums.js';
+import { LedgerDirection } from './wallet-ledger-entry.js';
 
 const makeTransaction = (overrides: Partial<CreateWagerTransactionProps> = {}) =>
     WagerTransaction.create({
@@ -139,6 +140,119 @@ describe('WagerTransaction', () => {
 
         it('matchesPayload é falso pra hash diferente (conflito de idempotência)', () => {
             expect(makeTransaction({ payloadHash: 'abc' }).matchesPayload('xyz')).toBe(false);
+        });
+    });
+
+    describe('rehydrate', () => {
+        const baseState = {
+            id: 't1',
+            providerId: 'provider-a',
+            externalTransactionId: 'tx-1',
+            idempotencyKey: 'provider-a:tx-1',
+            payloadHash: 'abc',
+            walletId: 'w1',
+            playerId: 'p1',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Bet,
+            money: Money.from({ amount: '25.00', currency: 'BRL' }),
+            createdAt: new Date(),
+        };
+
+        it('reconstrói uma transação rejeitada com o código de falha', () => {
+            const transaction = WagerTransaction.rehydrate({
+                ...baseState,
+                status: WagerTransactionStatus.Rejected,
+                failureCode: FailureCode.InsufficientFunds,
+            });
+            expect(transaction.getStatus()).toBe(WagerTransactionStatus.Rejected);
+            expect(transaction.getFailureCode()).toBe(FailureCode.InsufficientFunds);
+            expect(transaction.isTerminal()).toBe(true);
+        });
+
+        it('reconstrói uma transação processada com referência e hora', () => {
+            const at = new Date();
+            const transaction = WagerTransaction.rehydrate({
+                ...baseState,
+                status: WagerTransactionStatus.Processed,
+                referenceTransactionId: 'ref-1',
+                processedAt: at,
+            });
+            expect(transaction.getStatus()).toBe(WagerTransactionStatus.Processed);
+            expect(transaction.getReferenceTransactionId()).toBe('ref-1');
+            expect(transaction.getProcessedAt()).toBe(at);
+        });
+
+        it('mantém PENDING_REFERENCE, que ainda pode mudar', () => {
+            const transaction = WagerTransaction.rehydrate({
+                ...baseState,
+                status: WagerTransactionStatus.PendingReference,
+            });
+            expect(transaction.isTerminal()).toBe(false);
+            transaction.markProcessed('ref-1', new Date());
+            expect(transaction.getStatus()).toBe(WagerTransactionStatus.Processed);
+        });
+
+        it('uma transação já finalizada continua não podendo mudar', () => {
+            const transaction = WagerTransaction.rehydrate({
+                ...baseState,
+                status: WagerTransactionStatus.Processed,
+            });
+            expect(() => transaction.reject(FailureCode.AmountMismatch)).toThrow(
+                InvalidTransactionStateError,
+            );
+        });
+    });
+
+    describe('ledgerDirectionFor', () => {
+        const makeRollback = () =>
+            makeTransaction({
+                kind: WagerTransactionKind.Rollback,
+                referenceExternalTransactionId: 'tx-0',
+            });
+
+        it('BET debita', () => {
+            expect(makeTransaction().ledgerDirectionFor()).toBe(LedgerDirection.Debit);
+        });
+
+        it('WIN credita', () => {
+            const win = makeTransaction({ kind: WagerTransactionKind.Win });
+            expect(win.ledgerDirectionFor()).toBe(LedgerDirection.Credit);
+        });
+
+        it('REFUND credita', () => {
+            const refund = makeTransaction({
+                kind: WagerTransactionKind.Refund,
+                referenceExternalTransactionId: 'tx-0',
+            });
+            expect(refund.ledgerDirectionFor()).toBe(LedgerDirection.Credit);
+        });
+
+        it('OPENING credita', () => {
+            const opening = makeTransaction({ kind: WagerTransactionKind.Opening });
+            expect(opening.ledgerDirectionFor()).toBe(LedgerDirection.Credit);
+        });
+
+        it('ROLLBACK de uma BET credita (inverso do débito)', () => {
+            const bet = makeTransaction();
+            expect(makeRollback().ledgerDirectionFor(bet)).toBe(LedgerDirection.Credit);
+        });
+
+        it('ROLLBACK de um WIN debita (inverso do crédito)', () => {
+            const win = makeTransaction({ kind: WagerTransactionKind.Win });
+            expect(makeRollback().ledgerDirectionFor(win)).toBe(LedgerDirection.Debit);
+        });
+
+        it('ROLLBACK sem a transação referenciada é erro', () => {
+            expect(() => makeRollback().ledgerDirectionFor()).toThrow(InvalidTransactionError);
+        });
+
+        it('LOSS não tem direção no extrato', () => {
+            const loss = makeTransaction({
+                kind: WagerTransactionKind.Loss,
+                money: Money.zero('BRL'),
+            });
+            expect(() => loss.ledgerDirectionFor()).toThrow(InvalidTransactionError);
         });
     });
 });

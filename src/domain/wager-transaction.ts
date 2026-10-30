@@ -2,6 +2,7 @@ import { InvalidTransactionError, InvalidTransactionStateError } from './errors.
 import { FailureCode } from './failure-code.js';
 import { Money } from './money.js';
 import { WagerTransactionKind, WagerTransactionStatus } from './wager-transaction-enums.js';
+import { LedgerDirection } from './wallet-ledger-entry.js';
 
 export interface CreateWagerTransactionProps {
     id: string;
@@ -17,6 +18,13 @@ export interface CreateWagerTransactionProps {
     money: Money;
     referenceExternalTransactionId?: string;
     createdAt: Date;
+}
+
+export interface WagerTransactionState extends CreateWagerTransactionProps {
+    status: WagerTransactionStatus;
+    referenceTransactionId?: string;
+    failureCode?: FailureCode;
+    processedAt?: Date;
 }
 
 function kindRequiresReference(kind: WagerTransactionKind): boolean {
@@ -69,6 +77,28 @@ export class WagerTransaction {
         );
     }
 
+    static rehydrate(state: WagerTransactionState): WagerTransaction {
+        return new WagerTransaction(
+            state.id,
+            state.providerId,
+            state.externalTransactionId,
+            state.idempotencyKey,
+            state.payloadHash,
+            state.walletId,
+            state.playerId,
+            state.roundId,
+            state.gameId,
+            state.kind,
+            state.money,
+            state.referenceExternalTransactionId,
+            state.createdAt,
+            state.status,
+            state.referenceTransactionId,
+            state.failureCode,
+            state.processedAt,
+        );
+    }
+
     getStatus(): WagerTransactionStatus {
         return this.status;
     }
@@ -83,6 +113,36 @@ export class WagerTransaction {
 
     matchesPayload(payloadHash: string): boolean {
         return this.payloadHash === payloadHash;
+    }
+
+    ledgerDirectionFor(reference?: WagerTransaction): LedgerDirection {
+        switch (this.kind) {
+            case WagerTransactionKind.Bet:
+                return LedgerDirection.Debit;
+
+            case WagerTransactionKind.Opening:
+
+            case WagerTransactionKind.Win:
+
+            case WagerTransactionKind.Refund:
+                return LedgerDirection.Credit;
+
+            case WagerTransactionKind.Rollback: {
+                if (!reference) {
+                    throw new InvalidTransactionError(
+                        'ROLLBACK needs the referenced transaction to define its direction',
+                    );
+                }
+                return reference.ledgerDirectionFor() === LedgerDirection.Debit
+                    ? LedgerDirection.Credit
+                    : LedgerDirection.Debit;
+            }
+
+            case WagerTransactionKind.Loss:
+                throw new InvalidTransactionError(
+                    'LOSS does not move the balance, so it has no ledger direction',
+                );
+        }
     }
 
     isTerminal(): boolean {

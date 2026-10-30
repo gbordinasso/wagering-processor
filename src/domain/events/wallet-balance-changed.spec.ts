@@ -52,7 +52,7 @@ describe('WalletBalanceChanged', () => {
     });
 
     it('serializa a data em formato ISO-8601', () => {
-        expect(makeEvent().toJSON().occurredAt).toBe('2026-10-28T12:00:00.000Z');
+        expect(makeEvent().toJSON().occurredAt).toBe(occurredAt.toISOString());
     });
 
     it('vira JSON sem perder nada (é o que vai pra outbox)', () => {

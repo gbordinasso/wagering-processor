@@ -17,6 +17,8 @@ export interface CreateLedgerEntryProps {
     createdAt: Date;
 }
 
+export type LedgerEntryState = CreateLedgerEntryProps;
+
 export class WalletLedgerEntry {
     private constructor(
         public readonly id: string,
@@ -50,6 +52,19 @@ export class WalletLedgerEntry {
             throw new InvalidLedgerEntryError('Ledger entry is not balanced');
         }
         return entry;
+    }
+
+    static rehydrate(state: LedgerEntryState): WalletLedgerEntry {
+        return new WalletLedgerEntry(
+            state.id,
+            state.walletId,
+            state.transactionId,
+            state.direction,
+            state.money,
+            state.balanceBefore,
+            state.balanceAfter,
+            state.createdAt,
+        );
     }
 
     isBalanced(): boolean {

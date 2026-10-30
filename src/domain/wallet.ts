@@ -1,5 +1,19 @@
 import { InsufficientFundsError, InvalidWalletError } from './errors.js';
 import { Money } from './money.js';
+import { LedgerDirection, WalletLedgerEntry } from './wallet-ledger-entry.js';
+
+export interface WalletState {
+    id: string;
+    playerId: string;
+    balance: Money;
+    version: number;
+}
+
+export interface LedgerContext {
+    entryId: string;
+    transactionId: string;
+    at: Date;
+}
 
 export class Wallet {
     private constructor(
@@ -16,6 +30,10 @@ export class Wallet {
             throw new InvalidWalletError('Opening balance cannot be negative');
         }
         return new Wallet(props.id, props.playerId, props.openingBalance, 1);
+    }
+
+    static rehydrate(state: WalletState): Wallet {
+        return new Wallet(state.id, state.playerId, state.balance, state.version);
     }
 
     credit(amount: Money): void {
@@ -37,6 +55,25 @@ export class Wallet {
         }
         this.balance = this.balance.subtract(amount);
         this.version += 1;
+    }
+
+    applyMovement(direction: LedgerDirection, amount: Money, ctx: LedgerContext): WalletLedgerEntry {
+        const balanceBefore = this.balance;
+        if (direction === LedgerDirection.Debit) {
+            this.debit(amount);
+        } else {
+            this.credit(amount);
+        }
+        return WalletLedgerEntry.create({
+            id: ctx.entryId,
+            walletId: this.id,
+            transactionId: ctx.transactionId,
+            direction,
+            money: amount,
+            balanceBefore,
+            balanceAfter: this.balance,
+            createdAt: ctx.at,
+        });
     }
 
     getBalance(): Money {

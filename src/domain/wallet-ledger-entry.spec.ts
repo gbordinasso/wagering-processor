@@ -74,4 +74,36 @@ describe('WalletLedgerEntry', () => {
             ).toThrow(InvalidLedgerEntryError);
         });
     });
+
+    describe('rehydrate', () => {
+        it('reconstrói o lançamento com os dados guardados no banco', () => {
+            const entry = WalletLedgerEntry.rehydrate({
+                id: 'l1',
+                walletId: 'w1',
+                transactionId: 't1',
+                direction: LedgerDirection.Debit,
+                money: brl('25.00'),
+                balanceBefore: brl('100.00'),
+                balanceAfter: brl('75.00'),
+                createdAt: new Date(),
+            });
+            expect(entry.direction).toBe(LedgerDirection.Debit);
+            expect(entry.balanceAfter.toJSON().amount).toBe('75.00');
+            expect(entry.isBalanced()).toBe(true);
+        });
+
+        it('não revalida, mas o isBalanced ainda detecta uma linha inconsistente', () => {
+            const entry = WalletLedgerEntry.rehydrate({
+                id: 'l1',
+                walletId: 'w1',
+                transactionId: 't1',
+                direction: LedgerDirection.Debit,
+                money: brl('25.00'),
+                balanceBefore: brl('100.00'),
+                balanceAfter: brl('70.00'),
+                createdAt: new Date(),
+            });
+            expect(entry.isBalanced()).toBe(false);
+        });
+    });
 });
